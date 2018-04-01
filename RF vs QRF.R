@@ -9,8 +9,14 @@ library(party)
 library(partykit)
 
 
+<<<<<<< HEAD
 
 # Define 8 input features: Vehicle Age, Manufacture year, Origin of Import, Fuel Type, Engine Size, Vehicle Type, and VSP (vehicle specific power, and a combination of engine size, aerodynamic friction factors)
+=======
+# test 
+
+# new change 
+>>>>>>> 5b70f7586141171d1bd95bbecb0888158789843b
 cpm <- c("ppmNO","vAgeBin2","manYearBin2", "cGroup2", "odoBin","fType", "eBin","vehicleType", "vspBin" )
 # Load customized functions
 source("popular functions.R")
