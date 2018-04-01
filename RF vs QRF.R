@@ -8,7 +8,7 @@ library(party)
 library(partykit)
 
 
-
+# test 
 cpm <- c("ppmNO","vAgeBin2","manYearBin2", "cGroup2", "odoBin","fType", "eBin","vehicleType", "vspBin" )
 source("popular functions.R")
 
