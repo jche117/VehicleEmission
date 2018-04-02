@@ -21,43 +21,45 @@ library(gtable)
 library(grid)
 
 
-
+# Import 2015 data from overall dataset
 years = unique(allEV$year)
+# this is because our previous experiment has shown that the relevance of the data decays over time, so for predicting future emissions, the latest campaign data (2015) should be used
 
 years <- years[-4]
 
+# 8 input features are selected
 cpm <- c("ppmNO","vAgeBin2","manYear", "cGroup1", "odoReading","fType", "eBin","vehicleType", "vspBin" )
-cpm2 <- c("ppmNO","vAge","manYear", "cGroup1", "odoReading","fType", "engineCC","vehicleType", "vsp" )
-
+# rename them with abbreviation
 colnames(allEVTemp) = c("ppmNO","VA","YM", "IO", "OR","FT", "EG","VT", "VSP" )
+
 allEVTemp = allEV[which(allEV$year %in% x[4]),cpm]
-allEVTemp = allEV[which(allEV$year %in% x[4]),cpm2]
 
 allEVTemp$VT = factor(allEVTemp$VT)
-#colnames(allEVTemp) <- c("ppmNO","vAgeBin2","manYearBin2", "cGroup1", "odoBin","fType", "engine","vehicleType", "vspBin" )
-allEVTemp = cleandata(allEVTemp)
 
-# if want to use man Year
-setwd("/Users/jiazhenchen/Google Drive/Vehicle Emission Auckland")
+# load useful customised functions
 source("popular functions.R")
+#clean the na records
+allEVTemp = cleandata(allEVTemp)
 
 counter = 1
 iData <- data.frame(matrix(nrow = 10*8, ncol = 2)) 
 
 # ran the loop 10 times to decide if the tree is pruned to the right level, which is at level 5
+# this is to ensure the cTree model is not overfit
+# the cTree model is used to extract rules that are used to generalise QRF (Quantile regression forest) model
 for(i in 1:10){
 
+  #split the data into training and test set
   trainIndex <- createDataPartition(allEVTemp$ppmNO, p = .7,
                                   list = FALSE,
                                   times = 1)  
 
   allEVtraining = allEVTemp[trainIndex,]
   allEVtest = allEVTemp[-trainIndex,]
-  
+  #test the tree level from 1 to 8, and error rates stablize after level 5
   for (j in 1:8){
     ct <- partykit::ctree(ppmNO ~. , data= allEVtraining,control = ctree_control(maxdepth = 5))
-    ct2 <- partykit::ctree(ppmNO ~. , data= allEVtraining,control = ctree_control(maxdepth = 2))
-    
+
     #fit<-rpart(ppmNO~.,data=allEVtraining, control = ctrl)
     
     a = predict(ct, allEVtest[,-1])
@@ -66,23 +68,25 @@ for(i in 1:10){
     
     counter = counter + 1
   }
+  
+  #build a QRF model using the same training data, with 50 trees and mtry = 2, both parameters were confirmed from previous experiment
 qrf <- quantregForest(x=allEVtraining[, -1], y=allEVtraining[,1], mtry = 2,  ntree = 50)
-#a = predict(qrf, allEVtest[,-1])
-
-#print(mean(abs(a[,2]-allEVtest[,1])))
 
 }
 write.csv(iData, file = "ctree level.csv")
 
 
+# raw rules extracted from ctree model "ct" 
 
-a <- partykit:::.list.rules.party(ct2)
+a <- partykit:::.list.rules.party(ct)
 
 
-
+# Extract rule conditions from a 
 b <- ctExtractionB(a)
 c = ctExtractionC(a)
 iData <- data.frame(matrix(nrow = length(b), ncol = 15)) 
+
+# Evaluate rule qualities using MAE and MAD to median, also calculate the generalised prediction values using QRF model for each rule
 
 for(i in 1:length(b)){
 
@@ -109,73 +113,16 @@ for(i in 1:length(b)){
   iData[i,15] = mean(predictionTrain[,2])
   
 }
-predictionTraining = predict(qrf, allEVtraining[,-1])
-mean(abs(predictionTest[,2]-allEVtest$ppmNO))
-sd(predictionTraining[,2])
+
 
 colnames(iData) = c("RuleID","nrowTest","nrowTrain", "meanTest", "meanTrain", "MAETest", "MAETrain", "SDTrain","meanUQLQ", "MAEmeanpredictor", "MAEExpectedValueTrain", "MADtrain", "MAEtreeprediction", "TreePrediction", "GeneralizedQRF")
-iData$retained = "Retained"
-iData[which(iData$MADtrain > 293),"retained"] = "Not retained"
+
 iData[,c(3:15)] = round(iData[,c(3:15)],2)
 predictionTrain = predict(qrf, allEVtraining[,-1])
 stargazer(iData[,c("RuleID","MADtrain" ,"MAETest")], summary=FALSE, rownames=FALSE)
 stargazer(iData[,c("RuleID","TreePrediction","GeneralizedQRF" ,"MAEtreeprediction","MAEExpectedValueTrain", "MAETest")], summary=FALSE, rownames=FALSE)
 
-d = sData$ruleID
-d[order(nchar(d),d)]
-
-mean(abs(predictionTrain[,2]-median(predictionTrain[,2])))
-plot(iData$MADtrain, iData$MAETest)
-
-sData <- data.frame(matrix(nrow = length(b), ncol = 9)) 
-
-
-source("popular functions.R")
-split = "&"
-
-for(i in 1:length(a)){
-  t = data.frame(strsplit(a[i], split, fixed = FALSE, perl = FALSE, useBytes = FALSE)) 
-  sData[i,1] = paste("Rule",i)
-  for(j in 1:nrow(t)){
-    tempString = as.character(t[j,1]) 
-    tempString = transformRules(tempString)
-    if(grepl("YM", tempString, fixed=TRUE)){
-      sData[i,2] = gsub("YM\\ ", "", tempString)
-    }
-    if(grepl("IO", tempString, fixed=TRUE)){
-      sData[i,3] = gsub("\\ IO\\ ", "", tempString)
-    }    
-    if(grepl("VA", tempString, fixed=TRUE)){
-      sData[i,4] = gsub("\\ VA\\ ", "", tempString)
-    }    
-    if(grepl("OR", tempString, fixed=TRUE)){
-      sData[i,5] = gsub("\\ OR\\ ", "", tempString)
-    }
-    if(grepl("EG", tempString, fixed=TRUE)){
-      sData[i,6] = gsub("\\ EG\\ ", "", tempString)
-    }
-    if(grepl("VSP", tempString, fixed=TRUE)){
-      sData[i,7] = gsub("\\ VSP\\ ", "", tempString)
-    }
-    if(grepl("FT", tempString, fixed=TRUE)){
-      sData[i,8] = gsub("\\ FT\\ ", "", tempString)
-    }
-    if(grepl("VT", tempString, fixed=TRUE)){
-      sData[i,9] = gsub("\\ VT\\ ", "", tempString)
-    }
-  }
-}
-colnames(sData) = c("ruleID","YM", "IO", "VA","OR", "EG", "VSP" ,"FT","VT")
-stargazer(sData, summary=FALSE, rownames=FALSE)
-
-
-
-sum(iData$X2)
-sum(iData$X3)
-
-
-
+# Save the rules and evaluation results
 
 write.csv(iData, file = "ruleEvaluation.csv")
-ggplot(m, aes(x=MADtrain, y=MAETest, color=retained)) +
-  geom_point()
+
